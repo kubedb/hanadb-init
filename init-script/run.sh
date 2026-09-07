@@ -9,6 +9,10 @@ BACKINT_TARGET="${BACKINT_TARGET:-${BACKINT_BIN_DIR}/hdbbackint}"
 BACKINT_UID="${BACKINT_UID:-12000}"
 BACKINT_GID="${BACKINT_GID:-79}"
 HANA_SID="${HANA_SID:-${SID:-HXE}}"
+
+# SAP HANA discovers a Backint provider through this SID-scoped opt path.
+# KubeDB keeps the actual binary on the shared /hana mount so the main HANA
+# container can use the same agent that this init image installs.
 HDBBACKINT_PATH="${HDBBACKINT_PATH:-/usr/sap/${HANA_SID}/SYS/global/hdb/opt/hdbbackint}"
 
 log() {
@@ -33,6 +37,9 @@ log "INFO" "Installed HanaDB Backint agent at ${BACKINT_TARGET}"
 
 hdbbackint_dir="$(dirname "${HDBBACKINT_PATH}")"
 if [[ -d "${hdbbackint_dir}" && -w "${hdbbackint_dir}" ]]; then
+    # The opt directory is not always writable from the init container because
+    # it belongs to HANA's own filesystem layout. When it is writable, linking
+    # here lets HANA call hdbbackint without extra startup work.
     ln -sfn "${BACKINT_TARGET}" "${HDBBACKINT_PATH}"
     log "INFO" "Linked ${HDBBACKINT_PATH} to ${BACKINT_TARGET}"
 else

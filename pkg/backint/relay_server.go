@@ -18,6 +18,7 @@ package backint
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -38,8 +39,13 @@ func StartRelayServer(bindAddr string, cfg config) (*RelayServer, error) {
 			http.Error(w, "missing sourcePath", http.StatusBadRequest)
 			return
 		}
+		id, err := randomID()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to generate Backint id: %v", err), http.StatusInternalServerError)
+			return
+		}
 		meta := metadata{
-			ID:         randomID(),
+			ID:         id,
 			SourcePath: sourcePath,
 			SpoolPath:  sourcePath,
 			UserID:     r.URL.Query().Get("userID"),
@@ -139,7 +145,7 @@ func requireRelayAuth(cfg config, r *http.Request) error {
 	if cfg.RelayToken == "" {
 		return nil
 	}
-	if r.Header.Get("X-Backint-Relay-Token") != cfg.RelayToken {
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Backint-Relay-Token")), []byte(cfg.RelayToken)) != 1 {
 		return fmt.Errorf("unauthorized")
 	}
 	return nil

@@ -18,11 +18,16 @@ package backint
 
 import (
 	"bufio"
+	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func loadConfig(path string) (config, error) {
@@ -55,6 +60,26 @@ func loadConfig(path string) (config, error) {
 			switch k {
 			case "RESTIC_BIN":
 				cfg.ResticBin = v
+			case "RESTIC_COMMAND_TIMEOUT":
+				cfg.CommandTimeout, err = time.ParseDuration(v)
+				if err != nil {
+					return cfg, fmt.Errorf("invalid RESTIC_COMMAND_TIMEOUT %q: %w", v, err)
+				}
+			case "NICE_ADJUSTMENT":
+				cfg.NiceAdjustment, err = parseInt32(v)
+				if err != nil {
+					return cfg, fmt.Errorf("invalid NICE_ADJUSTMENT %q: %w", v, err)
+				}
+			case "IONICE_CLASS":
+				cfg.IONiceClass, err = parseInt32(v)
+				if err != nil {
+					return cfg, fmt.Errorf("invalid IONICE_CLASS %q: %w", v, err)
+				}
+			case "IONICE_CLASS_DATA":
+				cfg.IONiceClassData, err = parseInt32(v)
+				if err != nil {
+					return cfg, fmt.Errorf("invalid IONICE_CLASS_DATA %q: %w", v, err)
+				}
 			case "RESTIC_REPOSITORY":
 				cfg.Repo = v
 			case "RESTIC_PASSWORD":
@@ -77,6 +102,10 @@ func loadConfig(path string) (config, error) {
 			return cfg, err
 		}
 	}
+	// Relay mode is used by the KubeStash job: HANA calls the in-pod Backint
+	// binary, and that binary streams data to the job-side relay where Restic
+	// credentials live. Without relay mode, this agent talks to Restic directly
+	// and therefore needs repository and password configuration locally.
 	if cfg.RelayURL == "" {
 		if cfg.Repo == "" {
 			return cfg, errors.New("missing RESTIC_REPOSITORY in config")
@@ -112,6 +141,58 @@ func resticEnv(cfg config) []string {
 	return env
 }
 
+type resticCmd struct {
+	*exec.Cmd
+	cancel context.CancelFunc
+}
+
+func (cmd *resticCmd) Run() error {
+	defer cmd.cancel()
+	return cmd.Cmd.Run()
+}
+
+func resticCommand(cfg config, args ...string) *resticCmd {
+	commandArgs := make([]string, 0, len(args)+len(cfg.ResticArgs))
+	commandArgs = append(commandArgs, args...)
+	commandArgs = append(commandArgs, cfg.ResticArgs...)
+	commandName := cfg.ResticBin
+	if cfg.NiceAdjustment != nil {
+		commandArgs = append([]string{"-n", strconv.FormatInt(int64(*cfg.NiceAdjustment), 10), commandName}, commandArgs...)
+		commandName = "nice"
+	}
+	if cfg.IONiceClass != nil || cfg.IONiceClassData != nil {
+		prefix := make([]string, 0, 5)
+		if cfg.IONiceClass != nil {
+			prefix = append(prefix, "-c", strconv.FormatInt(int64(*cfg.IONiceClass), 10))
+		}
+		if cfg.IONiceClassData != nil {
+			prefix = append(prefix, "-n", strconv.FormatInt(int64(*cfg.IONiceClassData), 10))
+		}
+		prefix = append(prefix, commandName)
+		commandArgs = append(prefix, commandArgs...)
+		commandName = "ionice"
+	}
+
+	ctx := context.Background()
+	cancel := func() {}
+	if cfg.CommandTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, cfg.CommandTimeout)
+	}
+	return &resticCmd{
+		Cmd:    exec.CommandContext(ctx, commandName, commandArgs...),
+		cancel: cancel,
+	}
+}
+
+func parseInt32(value string) (*int32, error) {
+	parsed, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return nil, err
+	}
+	result := int32(parsed)
+	return &result, nil
+}
+
 func withRepoLock(cfg config, fn func() error) error {
 	lockPath := filepath.Join(cfg.MetaRoot, "repo.lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
@@ -127,5 +208,8 @@ func withRepoLock(cfg config, fn func() error) error {
 	defer func() {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	}()
+	// HANA can invoke DELETE/INQUIRE while backup metadata still exists in the
+	// same mounted agent directory. Serialize Restic mutations so prune does not
+	// race another Backint operation in the pod.
 	return fn()
 }

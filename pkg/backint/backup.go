@@ -31,7 +31,10 @@ func handleBackup(cfg config, a args, entries []inputEntry) []string {
 			continue
 		}
 		src := e.Args[0]
-		id := randomID()
+		id, err := randomID()
+		if err != nil {
+			return []string{fmt.Sprintf(`#ERROR "%s" "failed to generate Backint id: %s"`, src, err.Error())}
+		}
 		meta := metadata{
 			ID:         id,
 			SourcePath: src,

@@ -26,13 +26,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 )
 
 func resticBackupStream(cfg config, meta metadata, in io.Reader) (string, int64, error) {
 	var snapshotID string
 	var size int64
+	// SAP HANA hands Backint a logical source path for each data piece. Restic
+	// receives the bytes on stdin, but preserving that source path as the stdin
+	// filename keeps INQUIRE/RESTORE lookups aligned with HANA's Backint input.
 	args := []string{"backup", "--json", "--stdin", "--stdin-filename", meta.SpoolPath}
 	for _, tag := range resticTags(meta) {
 		args = append(args, "--tag", tag)
@@ -40,7 +42,7 @@ func resticBackupStream(cfg config, meta metadata, in io.Reader) (string, int64,
 	if meta.UserID != "" {
 		args = append(args, "--host", meta.UserID)
 	}
-	cmd := exec.Command(cfg.ResticBin, args...)
+	cmd := resticCommand(cfg, args...)
 	cmd.Env = resticEnv(cfg)
 	cmd.Stdin = in
 	var out bytes.Buffer
@@ -69,7 +71,7 @@ func resticBackupStream(cfg config, meta metadata, in io.Reader) (string, int64,
 }
 
 func resticRestoreToWriter(cfg config, meta metadata, out io.Writer) error {
-	cmd := exec.Command(cfg.ResticBin, "dump", meta.SnapshotID, meta.SpoolPath)
+	cmd := resticCommand(cfg, "dump", meta.SnapshotID, meta.SpoolPath)
 	cmd.Env = resticEnv(cfg)
 	cmd.Stdout = out
 	var stderr bytes.Buffer
@@ -82,7 +84,7 @@ func resticRestoreToWriter(cfg config, meta metadata, out io.Writer) error {
 
 func resticDelete(cfg config, snapshotID string) error {
 	return withRepoLock(cfg, func() error {
-		cmd := exec.Command(cfg.ResticBin, "forget", snapshotID, "--prune")
+		cmd := resticCommand(cfg, "forget", snapshotID, "--prune")
 		cmd.Env = resticEnv(cfg)
 		var out bytes.Buffer
 		cmd.Stdout = &out
@@ -112,7 +114,7 @@ func loadLatestMetaFromResticBySourcePath(cfg config, src string) (metadata, err
 
 func resticSnapshots(cfg config, tag string) ([]resticSnapshot, error) {
 	var snaps []resticSnapshot
-	cmd := exec.Command(cfg.ResticBin, "snapshots", "--json", "--tag", tag)
+	cmd := resticCommand(cfg, "snapshots", "--json", "--no-lock", "--tag", tag)
 	cmd.Env = resticEnv(cfg)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -167,6 +169,8 @@ func snapshotToMeta(snap resticSnapshot, fallbackID string) (metadata, error) {
 }
 
 func resticTags(meta metadata) []string {
+	// Keep HANA's EBID and source path as Restic tags. HANA later asks Backint to
+	// restore by EBID or by source path, so these tags are the lookup index.
 	tags := []string{"backint", "ebid:" + meta.ID, "source:" + encodeTagValue(meta.SourcePath)}
 	if meta.BackupID != "" {
 		tags = append(tags, "backup:"+meta.BackupID)
@@ -189,8 +193,10 @@ func decodeTagValue(s string) string {
 	return string(data)
 }
 
-func randomID() string {
+func randomID() (string, error) {
 	var b [12]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }

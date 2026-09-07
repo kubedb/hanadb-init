@@ -36,15 +36,20 @@ type args struct {
 }
 
 type Config struct {
-	ResticBin    string
-	Repo         string
-	Password     string
-	PasswordFile string
-	RelayURL     string
-	RelayToken   string
-	MetaRoot     string
-	SpoolRoot    string
-	Env          map[string]string
+	ResticBin       string
+	ResticArgs      []string
+	Repo            string
+	Password        string
+	PasswordFile    string
+	RelayURL        string
+	RelayToken      string
+	MetaRoot        string
+	SpoolRoot       string
+	Env             map[string]string
+	NiceAdjustment  *int32
+	IONiceClass     *int32
+	IONiceClassData *int32
+	CommandTimeout  time.Duration
 }
 
 type config = Config
