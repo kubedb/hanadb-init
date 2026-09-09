@@ -24,7 +24,7 @@ import (
 
 func main() {
 	if Version != "" {
-		backint.ToolVersion = "KubeDB HANA Backint Restic Plugin " + Version
+		backint.ToolVersion = "KubeDB HANA Backint Agent " + Version
 	}
 	os.Exit(backint.Run(os.Args[1:]))
 }

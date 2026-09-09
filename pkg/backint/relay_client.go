@@ -26,17 +26,25 @@ import (
 )
 
 func relayBackup(cfg config, a args, src string, body io.Reader) (relayBackupResponse, error) {
+	client, err := relayClient(cfg)
+	if err != nil {
+		return relayBackupResponse{}, err
+	}
+	defer client.CloseIdleConnections()
+
 	q := url.Values{}
 	q.Set("sourcePath", src)
 	q.Set("userID", a.userID)
 	q.Set("backupID", a.backupID)
 	q.Set("level", a.backupLevel)
-	req, err := http.NewRequest(http.MethodPost, cfg.RelayURL+"/backup?"+q.Encode(), body)
+	ctx, cancel := relayRequestContext(cfg)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(cfg.RelayURL, "/")+"/backup?"+q.Encode(), body)
 	if err != nil {
 		return relayBackupResponse{}, err
 	}
 	setRelayAuth(req, cfg)
-	resp, err := relayClient().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return relayBackupResponse{}, err
 	}
@@ -55,6 +63,12 @@ func relayBackup(cfg config, a args, src string, body io.Reader) (relayBackupRes
 }
 
 func relayRestore(cfg config, id, src string, out io.Writer) error {
+	client, err := relayClient(cfg)
+	if err != nil {
+		return err
+	}
+	defer client.CloseIdleConnections()
+
 	q := url.Values{}
 	if id != "" {
 		q.Set("id", id)
@@ -62,12 +76,14 @@ func relayRestore(cfg config, id, src string, out io.Writer) error {
 	if src != "" {
 		q.Set("sourcePath", src)
 	}
-	req, err := http.NewRequest(http.MethodGet, cfg.RelayURL+"/restore?"+q.Encode(), nil)
+	ctx, cancel := relayRequestContext(cfg)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(cfg.RelayURL, "/")+"/restore?"+q.Encode(), nil)
 	if err != nil {
 		return err
 	}
 	setRelayAuth(req, cfg)
-	resp, err := relayClient().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -78,11 +94,16 @@ func relayRestore(cfg config, id, src string, out io.Writer) error {
 		data, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("relay restore failed: %s", strings.TrimSpace(string(data)))
 	}
-	_, err = io.Copy(out, resp.Body)
-	return err
+	return readRelayRestoreStream(resp, out)
 }
 
 func relayInquire(cfg config, id, src string) (relayInquireResponse, error) {
+	client, err := relayClient(cfg)
+	if err != nil {
+		return relayInquireResponse{}, err
+	}
+	defer client.CloseIdleConnections()
+
 	q := url.Values{}
 	if id != "" {
 		q.Set("id", id)
@@ -90,12 +111,14 @@ func relayInquire(cfg config, id, src string) (relayInquireResponse, error) {
 	if src != "" {
 		q.Set("sourcePath", src)
 	}
-	req, err := http.NewRequest(http.MethodGet, cfg.RelayURL+"/inquire?"+q.Encode(), nil)
+	ctx, cancel := relayRequestContext(cfg)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(cfg.RelayURL, "/")+"/inquire?"+q.Encode(), nil)
 	if err != nil {
 		return relayInquireResponse{}, err
 	}
 	setRelayAuth(req, cfg)
-	resp, err := relayClient().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return relayInquireResponse{}, err
 	}
@@ -114,14 +137,22 @@ func relayInquire(cfg config, id, src string) (relayInquireResponse, error) {
 }
 
 func relayDelete(cfg config, id string) (relayDeleteResponse, error) {
+	client, err := relayClient(cfg)
+	if err != nil {
+		return relayDeleteResponse{}, err
+	}
+	defer client.CloseIdleConnections()
+
 	q := url.Values{}
 	q.Set("id", id)
-	req, err := http.NewRequest(http.MethodDelete, cfg.RelayURL+"/delete?"+q.Encode(), nil)
+	ctx, cancel := relayRequestContext(cfg)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimSuffix(cfg.RelayURL, "/")+"/delete?"+q.Encode(), nil)
 	if err != nil {
 		return relayDeleteResponse{}, err
 	}
 	setRelayAuth(req, cfg)
-	resp, err := relayClient().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return relayDeleteResponse{}, err
 	}
@@ -143,8 +174,4 @@ func setRelayAuth(req *http.Request, cfg config) {
 	if cfg.RelayToken != "" {
 		req.Header.Set("X-Backint-Relay-Token", cfg.RelayToken)
 	}
-}
-
-func relayClient() *http.Client {
-	return &http.Client{}
 }

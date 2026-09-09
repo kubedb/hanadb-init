@@ -20,25 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
-
-func ShouldRun(program string, argv []string) bool {
-	switch filepath.Base(program) {
-	case "hdbbackint", "hdbbackint-agent":
-		return true
-	}
-	if len(argv) == 0 {
-		return false
-	}
-	switch argv[0] {
-	case "-f", "-v", "-V":
-		return true
-	default:
-		return false
-	}
-}
 
 func Run(argv []string) int {
 	a, err := parseArgs(argv)
@@ -52,7 +35,8 @@ func Run(argv []string) int {
 	}
 	if a.versionDetail {
 		fmt.Printf("%q %q\n", BackintVersion, ToolVersion)
-		fmt.Println("Backint-compatible Restic agent for SAP HANA")
+		fmt.Println("Backint-compatible relay agent for SAP HANA")
+		fmt.Println(RelayTLSCapability)
 		return 0
 	}
 
@@ -71,13 +55,13 @@ func Run(argv []string) int {
 	outputs := []string{fmt.Sprintf(`#SOFTWAREID "%s" "%s"`, BackintVersion, ToolVersion)}
 	switch strings.ToUpper(a.function) {
 	case "BACKUP":
-		outputs = append(outputs, handleBackup(cfg, a, entries)...)
+		outputs = append(outputs, relayHandleBackup(cfg, a, entries)...)
 	case "RESTORE":
-		outputs = append(outputs, handleRestore(cfg, entries)...)
+		outputs = append(outputs, relayHandleRestore(cfg, entries)...)
 	case "INQUIRE":
-		outputs = append(outputs, handleInquire(cfg, entries)...)
+		outputs = append(outputs, relayHandleInquire(cfg, entries)...)
 	case "DELETE":
-		outputs = append(outputs, handleDelete(cfg, entries)...)
+		outputs = append(outputs, relayHandleDelete(cfg, entries)...)
 	default:
 		outputs = append(outputs, fmt.Sprintf(`#ERROR "%s" "unsupported function %q"`, a.inputFile, a.function))
 		writeOutput(a.outputFile, strings.Join(outputs, "\n"))

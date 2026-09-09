@@ -16,8 +16,7 @@ limitations under the License.
 
 package backint
 
-import "net/http"
-
+// These response fields are the wire contract with the job-owned relay.
 type relayBackupResponse struct {
 	ID         string `json:"id"`
 	SnapshotID string `json:"snapshotId"`
@@ -31,9 +30,4 @@ type relayInquireResponse struct {
 
 type relayDeleteResponse struct {
 	Deleted bool `json:"deleted"`
-}
-
-type RelayServer struct {
-	server *http.Server
-	addr   string
 }

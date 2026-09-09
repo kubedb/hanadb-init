@@ -16,11 +16,14 @@ limitations under the License.
 
 package backint
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 const BackintVersion = "backint 1.04"
 
-var ToolVersion = "KubeDB HANA Backint Restic Plugin 0.1"
+var ToolVersion = "KubeDB HANA Backint Agent 0.1"
 
 type args struct {
 	function      string
@@ -36,45 +39,18 @@ type args struct {
 }
 
 type Config struct {
-	ResticBin       string
-	ResticArgs      []string
-	Repo            string
-	Password        string
-	PasswordFile    string
-	RelayURL        string
-	RelayToken      string
-	MetaRoot        string
-	SpoolRoot       string
-	Env             map[string]string
-	NiceAdjustment  *int32
-	IONiceClass     *int32
-	IONiceClassData *int32
-	CommandTimeout  time.Duration
+	// Context bounds relay requests; nil uses the command timeout alone.
+	Context    context.Context
+	RelayURL   string
+	RelayToken string
+	// RelayCA contains only the operation's pinned relay trust certificates.
+	RelayCA        []byte
+	CommandTimeout time.Duration
 }
 
 type config = Config
 
-type metadata struct {
-	ID         string `json:"id"`
-	SourcePath string `json:"sourcePath"`
-	SpoolPath  string `json:"spoolPath"`
-	SnapshotID string `json:"snapshotId"`
-	Size       int64  `json:"size"`
-	UserID     string `json:"userId"`
-	BackupID   string `json:"backupId"`
-	Level      string `json:"level"`
-}
-
 type inputEntry struct {
 	Keyword string
 	Args    []string
-}
-
-type resticSnapshot struct {
-	ID       string    `json:"id"`
-	ShortID  string    `json:"short_id"`
-	Time     time.Time `json:"time"`
-	Hostname string    `json:"hostname"`
-	Paths    []string  `json:"paths"`
-	Tags     []string  `json:"tags"`
 }

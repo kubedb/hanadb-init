@@ -64,7 +64,9 @@ func relayHandleRestore(cfg config, entries []inputEntry) []string {
 				return []string{fmt.Sprintf(`#ERROR "%s" "%s"`, src, err.Error())}
 			}
 			err = relayRestore(cfg, id, src, out)
-			_ = out.Close()
+			if closeErr := out.Close(); err == nil {
+				err = closeErr
+			}
 			if err != nil {
 				return []string{fmt.Sprintf(`#ERROR "%s" "%s"`, src, err.Error())}
 			}
@@ -91,7 +93,9 @@ func relayHandleRestore(cfg config, entries []inputEntry) []string {
 				return []string{fmt.Sprintf(`#ERROR "%s" "%s"`, src, err.Error())}
 			}
 			err = relayRestore(cfg, inquire.ID, src, out)
-			_ = out.Close()
+			if closeErr := out.Close(); err == nil {
+				err = closeErr
+			}
 			if err != nil {
 				return []string{fmt.Sprintf(`#ERROR "%s" "%s"`, src, err.Error())}
 			}
